@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Honest25-AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-950 text-white p-5">
+    <div class="max-w-2xl mx-auto">
+        <h1 class="text-2xl font-bold mb-8 text-center text-blue-400">Honest25-AI</h1>
+        <div id="chat-box" class="h-[60vh] overflow-y-auto mb-4 space-y-4 p-4 border border-zinc-800 rounded"></div>
+        
+        <div class="flex gap-2">
+            <input id="input" class="w-full p-3 rounded bg-zinc-900 border border-zinc-700 focus:outline-none focus:border-blue-500" placeholder="Ask Honest25 anything...">
+            <button onclick="send()" class="bg-blue-600 px-6 py-2 rounded font-bold hover:bg-blue-700">Search</button>
+        </div>
+    </div>
+
+    <script>
+        async function send() {
+            const input = document.getElementById('input');
+            const chat = document.getElementById('chat-box');
+            const userMsg = input.value;
+            if(!userMsg) return;
+
+            chat.innerHTML += `<p class="text-zinc-400"><b>You:</b> ${userMsg}</p>`;
+            input.value = '';
+
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                body: JSON.stringify({ messages: [{ role: 'user', content: userMsg }] })
+            });
+            const data = await res.json();
+            const reply = data.choices[0].message.content;
+            
+            chat.innerHTML += `<div class="bg-zinc-900 p-3 rounded"><b>Honest25-AI:</b> ${reply}</div>`;
+            chat.scrollTop = chat.scrollHeight;
+        }
+    </script>
+</body>
+</html>
