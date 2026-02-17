@@ -1,56 +1,57 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <title>Honest25-AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+<title>Honest25-AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-black text-white p-6">
-    <div class="max-w-2xl mx-auto">
-        <h1 class="text-2xl font-bold mb-6 text-blue-500">Honest25-AI</h1>
-        <div id="chat" class="space-y-4 mb-4 h-96 overflow-y-auto border border-zinc-800 p-4 rounded"></div>
-        <div class="flex">
-            <input id="input" class="flex-1 p-2 bg-zinc-900 border border-zinc-700 rounded-l" placeholder="Type here...">
-            <button onclick="send()" class="bg-blue-600 p-2 rounded-r">Send</button>
-        </div>
-        <p id="status" class="mt-2 text-zinc-500 text-center"></p>
+<body class="bg-black text-white">
+
+<div class="max-w-2xl mx-auto p-6">
+  <h1 class="text-2xl font-bold mb-6 text-blue-500">HONEST25-AI</h1>
+
+  <div id="chat" class="space-y-4 mb-20"></div>
+
+  <div class="fixed bottom-5 left-0 right-0 max-w-2xl mx-auto flex gap-2 px-6">
+    <input id="input" class="flex-1 p-3 bg-zinc-900 border border-zinc-700 rounded-lg" placeholder="Ask anything..." />
+    <button onclick="ask()" class="bg-blue-600 px-5 rounded-lg">SEND</button>
+  </div>
+
+  <p id="status" class="text-xs text-zinc-500 mt-2 text-center"></p>
+</div>
+
+<script>
+async function ask() {
+  const input = document.getElementById("input");
+  const chat = document.getElementById("chat");
+  const status = document.getElementById("status");
+
+  if (!input.value) return;
+
+  const query = input.value;
+  input.value = "";
+
+  chat.innerHTML += `<div class="text-zinc-400">You: ${query}</div>`;
+  status.innerText = "Honest25-AI racing fast models...";
+
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ messages: [{role: "user", content: query}] })
+  });
+
+  const data = await res.json();
+
+  status.innerText = "Replied via: " + (data.modelUsed || "None");
+
+  chat.innerHTML += `
+    <div class="bg-zinc-900 p-4 rounded-lg border border-zinc-800">
+      <b>Honest25-AI:</b><br>${data.reply}
     </div>
-    <script>
-        let messages = [];
-        async function send() {
-            const input = document.getElementById('input');
-            const query = input.value;
-            if (!query) return;
-            document.getElementById('chat').innerHTML += `<p class="text-right"><b>You:</b> ${query}</p>`;
-            input.value = '';
-            const status = document.getElementById('status');
-            status.textContent = 'Thinking...';
-            messages.push({ role: 'user', content: query });
-            const res = await fetch('/api/chat', { method: 'POST', body: JSON.stringify({ messages }) });
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let reply = '';
-            const replyP = document.createElement('p');
-            replyP.innerHTML = '<b>Honest25:</b> ';
-            document.getElementById('chat').appendChild(replyP);
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = JSON.parse(line.slice(6));
-                        if (data.status) status.textContent = data.status;
-                        if (data.content) {
-                            reply += data.content;
-                            replyP.innerHTML = `<b>Honest25:</b> ${reply}`;
-                        }
-                        if (data.done) status.textContent = `Used: ${data.modelUsed}`;
-                    }
-                }
-            }
-            document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
-        }
-    </script>
+  `;
+
+  window.scrollTo(0, document.body.scrollHeight);
+}
+</script>
+
 </body>
 </html>
