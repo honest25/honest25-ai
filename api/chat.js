@@ -1,96 +1,120 @@
-const express = require("express");
-const cors = require("cors");
-const { v4: uuidv4 } = require("uuid");
+export const config = {
+  maxDuration: 60,
+};
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-let sessions = {}; // session-based memory
-
-// 🧠 Simulated AI Models
-function fastModel(prompt) {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      resolve("⚡ FAST Response: " + prompt);
-    }, 800);
-  });
-}
-
-function balancedModel(prompt) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve("⚖ BALANCED Response: " + prompt);
-    }, 1500);
-  });
-}
-
-function heavyModel(prompt) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve("🧠 HEAVY Response: " + prompt);
-    }, 2500);
-  });
-}
-
-// 🚀 TRUE Parallel Fallback (Natural Racing)
-app.post("/chat", async (req, res) => {
-  const { message, sessionId } = req.body;
-
-  if (!sessions[sessionId]) {
-    sessions[sessionId] = [];
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "POST only" });
   }
 
-  sessions[sessionId].push({
-    id: uuidv4(),
-    role: "user",
-    content: message,
-  });
+  const { messages } = req.body;
+  const userMessage = messages[messages.length - 1].content;
 
+  // DuckDuckGo Context
+  let context = "";
   try {
-    const response = await Promise.race([
-      fastModel(message),
-      balancedModel(message),
-      heavyModel(message),
-    ]);
-
-    const aiMessage = {
-      id: uuidv4(),
-      role: "assistant",
-      content: response,
-    };
-
-    sessions[sessionId].push(aiMessage);
-
-    res.json({
-      reply: aiMessage,
-      history: sessions[sessionId],
-    });
-  } catch (error) {
-    res.status(500).json({ error: "All models failed." });
+    const ddg = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json&no_html=1`
+    );
+    const ddgData = await ddg.json();
+    context = ddgData.AbstractText || "";
+  } catch (e) {
+    context = "";
   }
-});
 
-// ❌ Delete single message
-app.post("/delete-message", (req, res) => {
-  const { sessionId, messageId } = req.body;
+  // === MODEL TIERS ===
+  const FAST = [
+    "stepfun/step-3.5-flash:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "google/gemma-3-4b-it:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "qwen/qwen3-4b:free"
+  ];
 
-  sessions[sessionId] = sessions[sessionId].filter(
-    (msg) => msg.id !== messageId
-  );
+  const BALANCED = [
+    "google/gemma-3-12b-it:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "z-ai/glm-4.5-air:free",
+    "upstage/solar-pro-3:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free"
+  ];
 
-  res.json({ success: true });
-});
+  const HEAVY = [
+    "deepseek/deepseek-r1-0528:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "openai/gpt-oss-120b:free"
+  ];
 
-// 🗑 Clear entire chat
-app.post("/clear-chat", (req, res) => {
-  const { sessionId } = req.body;
-  sessions[sessionId] = [];
-  res.json({ success: true });
-});
+  async function tryModel(model, timeout) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
 
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
-});
+    try {
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json",
+            "X-Title": "Honest25-AI"
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              {
+                role: "system",
+                content: `You are Honest25-AI. Use this web context if useful: ${context}`
+              },
+              ...messages
+            ],
+            max_tokens: 500
+          })
+        }
+      );
 
+      clearTimeout(timer);
+
+      const data = await response.json();
+      if (data.choices?.[0]?.message?.content) {
+        return {
+          reply: data.choices[0].message.content,
+          modelUsed: model
+        };
+      }
+    } catch (err) {
+      return null;
+    }
+
+    return null;
+  }
+
+  // ===== EXECUTION ORDER =====
+
+  // FAST MODELS (2s each)
+  for (const model of FAST) {
+    const result = await tryModel(model, 2000);
+    if (result) return res.status(200).json(result);
+  }
+
+  // BALANCED MODELS (4s each)
+  for (const model of BALANCED) {
+    const result = await tryModel(model, 4000);
+    if (result) return res.status(200).json(result);
+  }
+
+  // HEAVY MODELS (no timeout = final thinking)
+  for (const model of HEAVY) {
+    const result = await tryModel(model, 15000);
+    if (result) return res.status(200).json(result);
+  }
+
+  return res.status(500).json({
+    reply: "All models failed.",
+    modelUsed: "none"
+  });
+}
 
