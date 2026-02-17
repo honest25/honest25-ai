@@ -1,62 +1,64 @@
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).send('Method');
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
   const { messages } = await req.json();
   const lastQuery = messages[messages.length - 1].content;
 
-  // 1. Context Search
-  const search = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(lastQuery)}&format=json&no_html=1`);
-  const sData = await search.json();
-  const context = sData.AbstractText || "General Knowledge Mode";
+  // 1. DuckDuckGo Search (Quick Context)
+  const searchRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(lastQuery)}&format=json&no_html=1`);
+  const searchData = await searchRes.json();
+  const context = searchData.AbstractText || "Honest25 Knowledge Base";
 
-  // 2. Your Tiered Model List
+  // 2. Ordered fallback stack based on your preferences
   const modelStack = [
-    "stepfun/step-3.5-flash:free",           // Fastest
-    "google/gemma-3-4b-it:free",             // Backup Fast
-    "google/gemma-3-12b-it:free",            // Balanced
-    "meta-llama/llama-3.3-70b-instruct:free", // Heavy
-    "deepseek/deepseek-r1-0528:free"         // Thinking
+    // --- FAST MODELS ---
+    "stepfun/step-3.5-flash:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "google/gemma-3-4b-it:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "qwen/qwen3-4b:free",
+    // --- BALANCED ---
+    "google/gemma-3-12b-it:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "z-ai/glm-4.5-air:free",
+    "upstage/solar-pro-3:free",
+    // --- HEAVY ---
+    "deepseek/deepseek-r1-0528:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free"
   ];
 
-  // 3. The Fallback Execution Loop
-  for (const model of modelStack) {
-    try {
-      console.log(`Honest25-AI trying: ${model}`);
-      
-      // We set a 'controller' to cancel the request if it takes > 4 seconds
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000); 
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "X-Title": "Honest25-AI"
+      },
+      body: JSON.stringify({
+        "models": modelStack, // OpenRouter handles the hierarchy
+        "route": "fallback",  // This ensures it skips slow models
+        "messages": [
+          { "role": "system", "content": `You are Honest25-AI. Context: ${context}. Be concise and fast.` },
+          ...messages
+        ],
+        "stream": false // Set to false for cleaner fallback handling in this simple setup
+      })
+    });
 
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          "model": model, 
-          "messages": [
-            { "role": "system", "content": `You are Honest25-AI. Context: ${context}` },
-            ...messages
-          ]
-        })
+    const data = await response.json();
+    
+    if (data.choices && data.choices[0]) {
+      res.status(200).json({ 
+        reply: data.choices[0].message.content,
+        modelUsed: data.model // Shows the user which model took over
       });
-
-      clearTimeout(timeoutId);
-      const data = await response.json();
-
-      if (data.choices && data.choices[0]) {
-        return res.status(200).json({ 
-          reply: data.choices[0].message.content,
-          modelUsed: model 
-        });
-      }
-    } catch (e) {
-      console.log(`${model} failed or timed out. Jumping to next...`);
-      continue; // This "jumps" to the next model in the list
+    } else {
+      throw new Error("No response from stack");
     }
-  }
 
-  res.status(500).json({ reply: "All models are currently slow. Try again." });
+  } catch (error) {
+    res.status(500).json({ error: "Honest25-AI: All models busy." });
+  }
 }
