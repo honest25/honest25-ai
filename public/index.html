@@ -5,14 +5,13 @@
   <title>Honest25-AI</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-
-<body class="bg-black text-zinc-200 flex h-screen overflow-hidden">
+<body class="bg-black text-white flex h-screen overflow-hidden">
 
   <!-- Sidebar -->
   <div class="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col">
     <div class="p-4 border-b border-zinc-800">
       <button onclick="createNewChat()" 
-        class="w-full bg-blue-600 hover:bg-blue-500 p-2 rounded-lg font-bold">
+        class="w-full bg-blue-600 hover:bg-blue-500 p-2 rounded font-bold">
         + New Chat
       </button>
     </div>
@@ -20,21 +19,22 @@
     <div id="chatList" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
   </div>
 
-  <!-- Main Chat Area -->
+  <!-- Main Chat -->
   <div class="flex-1 flex flex-col">
 
-    <div class="p-4 border-b border-zinc-800 font-bold text-lg">
-      Honest25-AI
+    <div class="border-b border-zinc-800 p-4 flex justify-between">
+      <h1 class="font-bold text-lg">Honest25-AI</h1>
+      <span id="modelInfo" class="text-xs text-zinc-400"></span>
     </div>
 
-    <div id="chatWindow" class="flex-1 overflow-y-auto p-6 space-y-6"></div>
+    <div id="chatWindow" class="flex-1 overflow-y-auto p-6 space-y-4"></div>
 
     <div class="p-4 border-t border-zinc-800 flex gap-2">
-      <input id="input" 
-        class="flex-1 bg-zinc-900 border border-zinc-800 p-3 rounded-lg outline-none focus:border-blue-500"
-        placeholder="Ask Honest25-AI..." />
+      <input id="userInput"
+        class="flex-1 bg-zinc-900 border border-zinc-700 p-3 rounded"
+        placeholder="Ask Honest25..." />
       <button onclick="sendMessage()" 
-        class="bg-blue-600 px-6 rounded-lg font-bold hover:bg-blue-500">
+        class="bg-blue-600 px-6 rounded font-bold">
         Send
       </button>
     </div>
@@ -42,7 +42,6 @@
   </div>
 
 <script>
-
 let chats = JSON.parse(localStorage.getItem("honest25_chats")) || {};
 let currentChatId = null;
 
@@ -51,108 +50,123 @@ function saveChats() {
 }
 
 function createNewChat() {
-  const id = "chat_" + Date.now();
-  chats[id] = [];
+  const id = Date.now().toString();
+  chats[id] = {
+    title: "New Chat",
+    messages: []
+  };
   currentChatId = id;
   saveChats();
-  renderChats();
-  renderMessages();
+  renderChatList();
+  renderChat();
 }
 
 function deleteChat(id) {
   delete chats[id];
   if (currentChatId === id) {
-    currentChatId = Object.keys(chats)[0] || null;
+    currentChatId = null;
+    document.getElementById("chatWindow").innerHTML = "";
   }
   saveChats();
-  renderChats();
-  renderMessages();
+  renderChatList();
 }
 
-function switchChat(id) {
-  currentChatId = id;
-  renderMessages();
-  renderChats();
-}
-
-function renderChats() {
+function renderChatList() {
   const list = document.getElementById("chatList");
   list.innerHTML = "";
 
   Object.keys(chats).forEach(id => {
     const div = document.createElement("div");
-    div.className = "flex justify-between items-center bg-zinc-900 p-2 rounded cursor-pointer hover:bg-zinc-800";
-    if (id === currentChatId) div.classList.add("border", "border-blue-500");
+    div.className = "bg-zinc-900 p-2 rounded flex justify-between items-center cursor-pointer hover:bg-zinc-800";
 
     div.innerHTML = `
-      <span onclick="switchChat('${id}')">Chat ${id.slice(-4)}</span>
-      <button onclick="deleteChat('${id}')" class="text-red-500 text-xs">✕</button>
+      <span onclick="openChat('${id}')">${chats[id].title}</span>
+      <button onclick="deleteChat('${id}')" class="text-red-500 text-xs">X</button>
     `;
-
     list.appendChild(div);
   });
 }
 
-function renderMessages() {
-  const windowDiv = document.getElementById("chatWindow");
-  windowDiv.innerHTML = "";
+function openChat(id) {
+  currentChatId = id;
+  renderChat();
+}
+
+function renderChat() {
+  const chatWindow = document.getElementById("chatWindow");
+  chatWindow.innerHTML = "";
 
   if (!currentChatId) return;
 
-  chats[currentChatId].forEach(msg => {
+  chats[currentChatId].messages.forEach(msg => {
     const div = document.createElement("div");
     div.className = msg.role === "user"
       ? "text-right"
-      : "bg-zinc-900 p-4 rounded-xl border border-zinc-800";
+      : "bg-zinc-900 p-4 rounded";
 
     div.innerHTML = msg.role === "user"
-      ? `<span class="bg-blue-600 px-4 py-2 rounded-lg inline-block">${msg.content}</span>`
-      : `<b>Honest25-AI:</b><br>${msg.content}`;
+      ? `<span class="bg-blue-600 px-3 py-2 rounded inline-block">${msg.content}</span>`
+      : `<b>Honest25:</b><br>${msg.content}`;
 
-    windowDiv.appendChild(div);
+    chatWindow.appendChild(div);
   });
 
-  windowDiv.scrollTop = windowDiv.scrollHeight;
+  chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 
 async function sendMessage() {
-  const input = document.getElementById("input");
+  const input = document.getElementById("userInput");
   const text = input.value.trim();
   if (!text || !currentChatId) return;
 
-  chats[currentChatId].push({ role: "user", content: text });
-  renderMessages();
   input.value = "";
 
+  const chat = chats[currentChatId];
+
+  // Save user message
+  chat.messages.push({ role: "user", content: text });
+  renderChat();
+  saveChats();
+
+  document.getElementById("modelInfo").innerText = "Thinking...";
+
+  // Send to backend
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      messages: chats[currentChatId]
+      messages: chat.messages
     })
   });
 
   const data = await res.json();
 
-  chats[currentChatId].push({
+  chat.messages.push({
     role: "assistant",
     content: data.reply
   });
 
+  // Auto title from first message
+  if (chat.title === "New Chat") {
+    chat.title = text.slice(0, 20);
+  }
+
+  document.getElementById("modelInfo").innerText =
+    "Model: " + (data.modelUsed || "Unknown");
+
+  renderChatList();
+  renderChat();
   saveChats();
-  renderMessages();
 }
 
-/* Initialize */
+// Auto create first chat if none exists
 if (Object.keys(chats).length === 0) {
   createNewChat();
 } else {
   currentChatId = Object.keys(chats)[0];
+  renderChatList();
+  renderChat();
 }
-
-renderChats();
-renderMessages();
-
 </script>
 
 </body>
