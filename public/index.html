@@ -1,131 +1,178 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Parallel AI Chat</title>
-  <style>
-    body {
-      font-family: Arial;
-      background: #f4f4f4;
-      display: flex;
-      justify-content: center;
-      padding: 40px;
-    }
-
-    .chat-container {
-      width: 500px;
-      background: white;
-      border-radius: 10px;
-      padding: 20px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
-
-    .messages {
-      height: 400px;
-      overflow-y: auto;
-      margin-bottom: 10px;
-    }
-
-    .message {
-      padding: 8px;
-      margin: 5px 0;
-      border-radius: 6px;
-      position: relative;
-    }
-
-    .user {
-      background: #e3f2fd;
-    }
-
-    .assistant {
-      background: #f1f8e9;
-    }
-
-    .delete-btn {
-      position: absolute;
-      right: 8px;
-      top: 4px;
-      cursor: pointer;
-      color: red;
-      font-size: 12px;
-    }
-
-    input {
-      width: 80%;
-      padding: 8px;
-    }
-
-    button {
-      padding: 8px;
-      margin-left: 5px;
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Honest25-AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
 
-<div class="chat-container">
-  <div class="messages" id="messages"></div>
+<body class="bg-black text-zinc-200 font-sans">
 
-  <input type="text" id="input" placeholder="Type message..." />
-  <button onclick="sendMessage()">Send</button>
-  <button onclick="clearChat()">Clear Chat</button>
-</div>
+  <!-- Header -->
+  <div class="border-b border-zinc-800 p-4 flex justify-between items-center">
+    <h1 class="text-xl font-bold text-blue-500 tracking-wide">
+      HONEST25-AI
+    </h1>
+    <span id="modeBadge"
+      class="text-xs bg-zinc-900 border border-zinc-800 px-3 py-1 rounded-full text-zinc-400">
+      MULTI-MODEL SMART ROUTER
+    </span>
+  </div>
+
+  <!-- Chat Container -->
+  <div id="chatContainer"
+    class="max-w-3xl mx-auto p-6 pb-32 space-y-6 min-h-screen">
+
+    <div class="text-zinc-500 text-sm text-center">
+      Ask anything. Fast → Balanced → Heavy auto switching enabled.
+    </div>
+
+  </div>
+
+  <!-- Input Area -->
+  <div
+    class="fixed bottom-0 left-0 w-full bg-black border-t border-zinc-800 p-4">
+    <div class="max-w-3xl mx-auto flex gap-3">
+      <input id="userInput"
+        type="text"
+        placeholder="Ask Honest25-AI anything..."
+        class="flex-1 bg-zinc-900 border border-zinc-800 p-4 rounded-2xl outline-none focus:border-blue-500 transition" />
+
+      <button id="sendBtn"
+        class="bg-blue-600 hover:bg-blue-500 px-6 rounded-2xl font-bold transition">
+        SEND
+      </button>
+    </div>
+
+    <div id="statusText"
+      class="text-center text-xs text-zinc-600 mt-2 tracking-wide">
+    </div>
+  </div>
+
 
 <script>
-let sessionId = localStorage.getItem("sessionId");
-if (!sessionId) {
-  sessionId = crypto.randomUUID();
-  localStorage.setItem("sessionId", sessionId);
-}
 
+const chatContainer = document.getElementById("chatContainer");
+const input = document.getElementById("userInput");
+const sendBtn = document.getElementById("sendBtn");
+const statusText = document.getElementById("statusText");
+
+/* ENTER KEY SUPPORT */
+input.addEventListener("keydown", function(e) {
+  if (e.key === "Enter") {
+    sendMessage();
+  }
+});
+
+sendBtn.addEventListener("click", sendMessage);
+
+
+/* MAIN FUNCTION */
 async function sendMessage() {
-  const input = document.getElementById("input");
-  const message = input.value;
+  const message = input.value.trim();
   if (!message) return;
 
+  addUserMessage(message);
   input.value = "";
+  showThinking();
 
-  const response = await fetch("http://localhost:5000/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, sessionId })
-  });
+  try {
 
-  const data = await response.json();
-  renderMessages(data.history);
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "user", content: message }
+        ]
+      })
+    });
+
+    const data = await response.json();
+
+    removeThinking();
+    addBotMessage(data.reply, data.model);
+
+  } catch (error) {
+    removeThinking();
+    addBotMessage("Honest25-AI error. Try again.", "none");
+  }
 }
 
-function renderMessages(history) {
-  const container = document.getElementById("messages");
-  container.innerHTML = "";
 
-  history.forEach(msg => {
-    const div = document.createElement("div");
-    div.className = "message " + msg.role;
-    div.innerHTML = `
-      ${msg.content}
-      <span class="delete-btn" onclick="deleteMessage('${msg.id}')">x</span>
-    `;
-    container.appendChild(div);
+/* UI HELPERS */
+
+function addUserMessage(text) {
+  const div = document.createElement("div");
+  div.className = "flex justify-end";
+
+  div.innerHTML = `
+    <div class="bg-blue-600 px-5 py-3 rounded-2xl max-w-[75%] text-white shadow-lg">
+      ${escapeHtml(text)}
+    </div>
+  `;
+
+  chatContainer.appendChild(div);
+  scrollDown();
+}
+
+function addBotMessage(text, model) {
+  const div = document.createElement("div");
+  div.className = "flex justify-start";
+
+  div.innerHTML = `
+    <div class="bg-zinc-900 border border-zinc-800 px-5 py-4 rounded-2xl max-w-[80%] shadow-xl">
+      <div class="text-white whitespace-pre-wrap">${escapeHtml(text)}</div>
+      <div class="text-xs text-zinc-500 mt-3">
+        Model: ${model || "unknown"}
+      </div>
+    </div>
+  `;
+
+  chatContainer.appendChild(div);
+  statusText.innerText = "Response delivered.";
+  scrollDown();
+}
+
+function showThinking() {
+  statusText.innerText = "Honest25-AI is searching fast models...";
+
+  const div = document.createElement("div");
+  div.id = "thinkingBlock";
+  div.className = "flex justify-start";
+
+  div.innerHTML = `
+    <div class="bg-zinc-800 px-5 py-3 rounded-2xl max-w-[60%] animate-pulse">
+      Thinking...
+    </div>
+  `;
+
+  chatContainer.appendChild(div);
+  scrollDown();
+}
+
+function removeThinking() {
+  const thinking = document.getElementById("thinkingBlock");
+  if (thinking) thinking.remove();
+}
+
+function scrollDown() {
+  window.scrollTo({
+    top: document.body.scrollHeight,
+    behavior: "smooth"
   });
 }
 
-async function deleteMessage(messageId) {
-  await fetch("http://localhost:5000/delete-message", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, messageId })
-  });
-  location.reload();
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
-async function clearChat() {
-  await fetch("http://localhost:5000/clear-chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId })
-  });
-  location.reload();
-}
 </script>
 
 </body>
