@@ -7,33 +7,43 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 async function callModel(model, messages, context) {
   const controller = new AbortController();
 
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    signal: controller.signal,
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "X-Title": "Honest25-AI"
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: "system", content: `You are Honest25-AI. Use this context: ${context}` },
-        ...messages
-      ]
-    })
-  });
+  const timeout = setTimeout(() => controller.abort(), 8000); // 8s hard limit
 
-  const data = await response.json();
+  try {
+    const response = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "X-Title": "Honest25-AI"
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.7,
+        messages: [
+          { role: "system", content: `You are Honest25-AI. Use this context: ${context}` },
+          ...messages
+        ]
+      })
+    });
 
-  if (data.choices && data.choices[0]) {
-    return {
-      reply: data.choices[0].message.content,
-      modelUsed: model
-    };
+    clearTimeout(timeout);
+
+    const data = await response.json();
+
+    if (data.choices && data.choices[0]) {
+      return {
+        reply: data.choices[0].message.content,
+        modelUsed: model
+      };
+    }
+
+    throw new Error("Invalid response");
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
   }
-
-  throw new Error("No valid response");
 }
 
 export default async function handler(req, res) {
@@ -44,7 +54,7 @@ export default async function handler(req, res) {
   const { messages } = req.body;
   const lastQuery = messages[messages.length - 1].content;
 
-  // DuckDuckGo context
+  // DuckDuckGo Context
   let context = "";
   try {
     const search = await fetch(
@@ -56,7 +66,7 @@ export default async function handler(req, res) {
     context = "Search unavailable";
   }
 
-  // -------- FAST MODELS (Race Together) --------
+  // FAST (Race)
   const fastModels = [
     "stepfun/step-3.5-flash:free",
     "nvidia/nemotron-nano-9b-v2:free",
@@ -66,15 +76,13 @@ export default async function handler(req, res) {
   ];
 
   try {
-    const fastResult = await Promise.any(
-      fastModels.map(model =>
-        callModel(model, messages, context)
-      )
+    const fast = await Promise.any(
+      fastModels.map(m => callModel(m, messages, context))
     );
-    return res.status(200).json(fastResult);
+    return res.status(200).json(fast);
   } catch {}
 
-  // -------- BALANCED MODELS --------
+  // BALANCED (Race)
   const balancedModels = [
     "google/gemma-3-12b-it:free",
     "mistralai/mistral-small-3.1-24b-instruct:free",
@@ -84,15 +92,13 @@ export default async function handler(req, res) {
   ];
 
   try {
-    const balancedResult = await Promise.any(
-      balancedModels.map(model =>
-        callModel(model, messages, context)
-      )
+    const balanced = await Promise.any(
+      balancedModels.map(m => callModel(m, messages, context))
     );
-    return res.status(200).json(balancedResult);
+    return res.status(200).json(balanced);
   } catch {}
 
-  // -------- HEAVY MODELS --------
+  // HEAVY (Race)
   const heavyModels = [
     "deepseek/deepseek-r1-0528:free",
     "meta-llama/llama-3.3-70b-instruct:free",
@@ -102,12 +108,10 @@ export default async function handler(req, res) {
   ];
 
   try {
-    const heavyResult = await Promise.any(
-      heavyModels.map(model =>
-        callModel(model, messages, context)
-      )
+    const heavy = await Promise.any(
+      heavyModels.map(m => callModel(m, messages, context))
     );
-    return res.status(200).json(heavyResult);
+    return res.status(200).json(heavy);
   } catch {}
 
   return res.status(500).json({
@@ -115,3 +119,4 @@ export default async function handler(req, res) {
     modelUsed: "none"
   });
 }
+
