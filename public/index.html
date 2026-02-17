@@ -1,109 +1,131 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Honest25-AI</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Parallel AI Chat</title>
+  <style>
+    body {
+      font-family: Arial;
+      background: #f4f4f4;
+      display: flex;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    .chat-container {
+      width: 500px;
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    .messages {
+      height: 400px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+
+    .message {
+      padding: 8px;
+      margin: 5px 0;
+      border-radius: 6px;
+      position: relative;
+    }
+
+    .user {
+      background: #e3f2fd;
+    }
+
+    .assistant {
+      background: #f1f8e9;
+    }
+
+    .delete-btn {
+      position: absolute;
+      right: 8px;
+      top: 4px;
+      cursor: pointer;
+      color: red;
+      font-size: 12px;
+    }
+
+    input {
+      width: 80%;
+      padding: 8px;
+    }
+
+    button {
+      padding: 8px;
+      margin-left: 5px;
+    }
+  </style>
 </head>
-<body class="bg-black text-zinc-200 min-h-screen flex flex-col">
+<body>
 
-  <div class="max-w-3xl mx-auto w-full p-6 flex-1">
+<div class="chat-container">
+  <div class="messages" id="messages"></div>
 
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold text-blue-500">HONEST25 AI</h1>
-      <button onclick="clearChat()" 
-        class="text-xs bg-red-600 px-3 py-1 rounded">
-        Clear Chat
-      </button>
-    </div>
-
-    <div id="chat" class="space-y-4 mb-24"></div>
-
-  </div>
-
-  <div class="fixed bottom-0 left-0 w-full bg-zinc-900 p-4">
-    <div class="max-w-3xl mx-auto flex gap-2">
-      <input id="input" class="flex-1 bg-black border border-zinc-700 p-3 rounded-lg"
-        placeholder="Ask Honest25-AI...">
-      <button onclick="send()" 
-        class="bg-blue-600 px-5 rounded-lg font-bold">
-        Send
-      </button>
-    </div>
-  </div>
+  <input type="text" id="input" placeholder="Type message..." />
+  <button onclick="sendMessage()">Send</button>
+  <button onclick="clearChat()">Clear Chat</button>
+</div>
 
 <script>
-
-let messages = JSON.parse(localStorage.getItem("honest25")) || [];
-render();
-
-function save() {
-  localStorage.setItem("honest25", JSON.stringify(messages));
+let sessionId = localStorage.getItem("sessionId");
+if (!sessionId) {
+  sessionId = crypto.randomUUID();
+  localStorage.setItem("sessionId", sessionId);
 }
 
-function render() {
-  const chat = document.getElementById("chat");
-  chat.innerHTML = "";
-
-  messages.forEach((msg, index) => {
-    const div = document.createElement("div");
-    div.className = "bg-zinc-900 p-4 rounded-xl relative";
-
-    div.innerHTML = `
-      <div class="text-sm opacity-70">${msg.role}</div>
-      <div>${msg.content}</div>
-      ${msg.model ? `<div class="text-xs text-blue-400 mt-2">Model: ${msg.model}</div>` : ""}
-      <button onclick="deleteMsg(${index})"
-        class="absolute top-2 right-2 text-red-500 text-xs">
-        ✕
-      </button>
-    `;
-
-    chat.appendChild(div);
-  });
-
-  window.scrollTo(0, document.body.scrollHeight);
-}
-
-function deleteMsg(index) {
-  messages.splice(index, 1);
-  save();
-  render();
-}
-
-function clearChat() {
-  messages = [];
-  save();
-  render();
-}
-
-async function send() {
+async function sendMessage() {
   const input = document.getElementById("input");
-  const text = input.value;
-  if (!text) return;
+  const message = input.value;
+  if (!message) return;
 
-  messages.push({ role: "user", content: text });
-  save();
-  render();
   input.value = "";
 
-  const res = await fetch("/api/chat", {
+  const response = await fetch("http://localhost:5000/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages })
+    body: JSON.stringify({ message, sessionId })
   });
 
-  const data = await res.json();
-
-  messages.push({
-    role: "assistant",
-    content: data.reply,
-    model: data.modelUsed
-  });
-
-  save();
-  render();
+  const data = await response.json();
+  renderMessages(data.history);
 }
 
+function renderMessages(history) {
+  const container = document.getElementById("messages");
+  container.innerHTML = "";
+
+  history.forEach(msg => {
+    const div = document.createElement("div");
+    div.className = "message " + msg.role;
+    div.innerHTML = `
+      ${msg.content}
+      <span class="delete-btn" onclick="deleteMessage('${msg.id}')">x</span>
+    `;
+    container.appendChild(div);
+  });
+}
+
+async function deleteMessage(messageId) {
+  await fetch("http://localhost:5000/delete-message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, messageId })
+  });
+  location.reload();
+}
+
+async function clearChat() {
+  await fetch("http://localhost:5000/clear-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId })
+  });
+  location.reload();
+}
 </script>
 
 </body>
